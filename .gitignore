@@ -1,0 +1,18 @@
+# Runtime data
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Screenshots (local only)
+*.png
+
+# Tool/IDE directories
+.claude/
+.agents/
+.playwright-mcp/

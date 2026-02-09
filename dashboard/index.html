@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WiFi Monitor</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --border: #2a2d3a;
+    --text: #e1e4ed;
+    --text-dim: #8b8fa3;
+    --good: #22c55e;
+    --fair: #eab308;
+    --poor: #ef4444;
+    --accent: #6366f1;
+    --accent2: #8b5cf6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 20px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  header h1 { font-size: 1.5rem; font-weight: 600; }
+  header h1 span { color: var(--accent); }
+
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  select, button {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    cursor: pointer;
+  }
+  select:hover, button:hover { border-color: var(--accent); }
+
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .status-dot.live { background: var(--good); animation: pulse 2s infinite; }
+  .status-dot.stale { background: var(--fair); }
+  .status-dot.offline { background: var(--poor); }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* Cards */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+    text-align: center;
+  }
+  .card .label { font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+  .card .value { font-size: 1.75rem; font-weight: 700; }
+  .card .unit { font-size: 0.875rem; color: var(--text-dim); margin-left: 2px; }
+  .card .badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-top: 6px;
+  }
+  .badge.good { background: rgba(34,197,94,0.15); color: var(--good); }
+  .badge.fair { background: rgba(234,179,8,0.15); color: var(--fair); }
+  .badge.poor { background: rgba(239,68,68,0.15); color: var(--poor); }
+
+  /* Info bar */
+  .info-bar {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 20px;
+    display: flex;
+    gap: 28px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+    font-size: 0.875rem;
+  }
+  .info-bar .item { display: flex; gap: 6px; }
+  .info-bar .item .lbl { color: var(--text-dim); }
+
+  /* Charts */
+  .charts {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .chart-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+  }
+  .chart-box h3 { font-size: 0.95rem; font-weight: 600; margin-bottom: 14px; }
+  .chart-box canvas { width: 100% !important; max-height: 280px; }
+
+  .isp-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+  }
+  .isp-tag::before {
+    content: '';
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--isp-color);
+    flex-shrink: 0;
+  }
+
+  /* Boost controls */
+  #boostSelect {
+    min-width: 100px;
+  }
+  #boostSelect.active {
+    background: rgba(99,102,241,0.2);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* Modal */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    max-width: 900px;
+    width: 100%;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+  }
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal-header h2 { font-size: 1.1rem; font-weight: 600; }
+  .modal-close {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 1.25rem;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 6px;
+  }
+  .modal-close:hover { color: var(--text); background: var(--border); }
+  .modal-body {
+    overflow-y: auto;
+    padding: 16px 20px;
+  }
+  .modal-body table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+  }
+  .modal-body th {
+    text-align: left;
+    color: var(--text-dim);
+    font-weight: 500;
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--surface);
+  }
+  .modal-body td {
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(42,45,58,0.4);
+    white-space: nowrap;
+  }
+  .modal-body tr:hover td { background: rgba(99,102,241,0.05); }
+  .modal-body a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .modal-body a:hover { text-decoration: underline; }
+
+  /* Chart header with action */
+  .chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+  .chart-header h3 { font-size: 0.95rem; font-weight: 600; margin: 0; }
+  .chart-link {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    cursor: pointer;
+    border: none;
+    background: none;
+    padding: 4px 8px;
+    border-radius: 6px;
+  }
+  .chart-link:hover { color: var(--accent); background: var(--border); }
+
+  /* Log viewer */
+  .log-content {
+    font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+    font-size: 0.75rem;
+    line-height: 1.6;
+    white-space: pre;
+    color: var(--text-dim);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    overflow: auto;
+    max-height: 60vh;
+  }
+  .log-content .log-warn { color: var(--fair); }
+  .log-content .log-err { color: var(--poor); }
+  .log-content .log-info { color: var(--text); }
+
+  .empty-state {
+    text-align: center;
+    color: var(--text-dim);
+    padding: 60px 20px;
+  }
+  .empty-state h2 { font-size: 1.25rem; margin-bottom: 8px; color: var(--text); }
+</style>
+</head>
+<body>
+  <header>
+    <h1><span>WiFi</span> Monitor</h1>
+    <div class="controls">
+      <span class="status-dot offline" id="statusDot" title="Offline"></span>
+      <select id="daySelect"><option value="">Loading...</option></select>
+      <select id="boostSelect">
+        <option value="" disabled selected>Boost</option>
+        <option value="5min-30min">Every 5 min for 30 min</option>
+        <option value="5min-1h">Every 5 min for 1 hour</option>
+        <option value="2min-30min">Every 2 min for 30 min</option>
+      </select>
+      <button id="runSpeedBtn" onclick="runSpeedNow()">Run Speed Test</button>
+      <button onclick="showLogsModal()">Logs</button>
+      <button onclick="refreshAll()">Refresh</button>
+    </div>
+  </header>
+
+  <div class="cards" id="cards">
+    <div class="card" id="cardSignal">
+      <div class="label">Signal</div>
+      <div class="value">—<span class="unit">dBm</span></div>
+    </div>
+    <div class="card" id="cardSNR">
+      <div class="label">SNR</div>
+      <div class="value">—<span class="unit">dB</span></div>
+    </div>
+    <div class="card" id="cardLatency">
+      <div class="label">Latency</div>
+      <div class="value">—<span class="unit">ms</span></div>
+    </div>
+    <div class="card" id="cardLoss">
+      <div class="label">Packet Loss</div>
+      <div class="value">—<span class="unit">%</span></div>
+    </div>
+    <div class="card" id="cardDownload">
+      <div class="label">Download</div>
+      <div class="value">—<span class="unit">Mbps</span></div>
+    </div>
+    <div class="card" id="cardUpload">
+      <div class="label">Upload</div>
+      <div class="value">—<span class="unit">Mbps</span></div>
+    </div>
+    <div class="card" id="cardJitter">
+      <div class="label">Jitter</div>
+      <div class="value">—<span class="unit">ms</span></div>
+    </div>
+  </div>
+
+  <div class="info-bar" id="infoBar">
+    <div class="item"><span class="lbl">SSID:</span> <span id="infoSSID">—</span></div>
+    <div class="item"><span class="lbl">BSSID:</span> <span id="infoBSSID">—</span></div>
+    <div class="item"><span class="lbl">Channel:</span> <span id="infoChannel">—</span></div>
+    <div class="item"><span class="lbl">Width:</span> <span id="infoWidth">—</span></div>
+    <div class="item"><span class="lbl">PHY:</span> <span id="infoPHY">—</span></div>
+    <div class="item"><span class="lbl">Tx Rate:</span> <span id="infoTxRate">—</span></div>
+    <div class="item"><span class="lbl">Server:</span> <span id="infoServer">—</span></div>
+    <div class="item"><span class="lbl">VPN:</span> <span id="infoVPN">—</span></div>
+    <div class="item"><span class="lbl">ISP:</span> <span id="infoISP">—</span></div>
+  </div>
+
+  <div class="info-bar" id="ispLegend" style="display:none"></div>
+
+  <div class="charts">
+    <div class="chart-box">
+      <div class="chart-header">
+        <h3>Speed (Mbps)</h3>
+        <button class="chart-link" onclick="showTestsModal()">View All Tests</button>
+      </div>
+      <canvas id="chartSpeed"></canvas>
+    </div>
+    <div class="chart-box">
+      <h3>Jitter &amp; Loaded Latency (ms)</h3>
+      <canvas id="chartJitter"></canvas>
+    </div>
+    <div class="chart-box">
+      <h3>Signal &amp; Noise (dBm) / SNR (dB)</h3>
+      <canvas id="chartSignal"></canvas>
+    </div>
+    <div class="chart-box">
+      <h3>Latency (ms) &amp; Packet Loss (%)</h3>
+      <canvas id="chartLatency"></canvas>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="testsModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Speed Tests</h2>
+        <button class="modal-close" onclick="hideTestsModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Download</th>
+              <th>Upload</th>
+              <th>Ping</th>
+              <th>Jitter</th>
+              <th>ISP</th>
+              <th>Server</th>
+              <th>Result</th>
+            </tr>
+          </thead>
+          <tbody id="testsTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="logsModal">
+    <div class="modal" style="max-width: 1000px;">
+      <div class="modal-header">
+        <h2>Monitor Logs</h2>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button onclick="loadLogs()" style="font-size:0.8rem;padding:4px 10px;border-radius:6px;">Refresh</button>
+          <button class="modal-close" onclick="hideLogsModal()">&times;</button>
+        </div>
+      </div>
+      <div class="modal-body" style="padding:12px 16px;">
+        <div class="log-content" id="logContent">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────
+let allWifi = [];
+let allSpeed = [];
+let lastWifiTs = null;
+let lastSpeedTs = null;
+let currentDay = null;
+let refreshTimer = null;
+
+const daySelect = document.getElementById('daySelect');
+const statusDot = document.getElementById('statusDot');
+
+// ── Quality helpers ────────────────────────────────────────────────
+function signalQ(v) { return v == null ? null : v >= -60 ? 'good' : v >= -70 ? 'fair' : 'poor'; }
+function snrQ(v)    { return v == null ? null : v >= 30 ? 'good' : v >= 20 ? 'fair' : 'poor'; }
+function latQ(v)    { return v == null ? null : v <= 20 ? 'good' : v <= 50 ? 'fair' : 'poor'; }
+function lossQ(v)   { return v == null ? null : v === 0 ? 'good' : v <= 2 ? 'fair' : 'poor'; }
+function dlQ(v)     { return v == null ? null : v >= 100 ? 'good' : v >= 50 ? 'fair' : 'poor'; }
+function ulQ(v)     { return v == null ? null : v >= 20 ? 'good' : v >= 10 ? 'fair' : 'poor'; }
+function jitQ(v)    { return v == null ? null : v <= 5 ? 'good' : v <= 15 ? 'fair' : 'poor'; }
+
+// ── ISP color management ──────────────────────────────────────────
+const ispColorMap = {};
+const ispPalette = ['#6366f1', '#22c55e', '#f97316', '#06b6d4', '#ec4899', '#8b5cf6', '#14b8a6', '#eab308'];
+let ispColorIdx = 0;
+function getIspColor(isp) {
+  if (!isp) return '#4b5563';
+  if (!ispColorMap[isp]) {
+    ispColorMap[isp] = ispPalette[ispColorIdx++ % ispPalette.length];
+  }
+  return ispColorMap[isp];
+}
+function renderIspLegend() {
+  const el = document.getElementById('ispLegend');
+  const isps = Object.entries(ispColorMap);
+  if (isps.length === 0) { el.style.display = 'none'; return; }
+  el.style.display = 'flex';
+  el.innerHTML = '<span class="lbl" style="color:var(--text-dim)">ISP:</span> ' +
+    isps.map(([name, color]) =>
+      `<span class="isp-tag" style="--isp-color:${color}">${name}</span>`
+    ).join('');
+}
+
+const cardLabels = { cardSignal: 'Signal', cardSNR: 'SNR', cardLatency: 'Latency', cardLoss: 'Packet Loss', cardDownload: 'Download', cardUpload: 'Upload', cardJitter: 'Jitter' };
+function setCardSafe(id, value, unit, quality) {
+  const card = document.getElementById(id);
+  const display = value != null ? value : '—';
+  let badge = '';
+  if (quality) badge = `<span class="badge ${quality}">${quality}</span>`;
+  card.innerHTML = `
+    <div class="label">${cardLabels[id]}</div>
+    <div class="value">${display}<span class="unit">${unit}</span></div>
+    ${badge}
+  `;
+}
+
+function updateCards(wifiRow, speedRow) {
+  // WiFi metrics from latest wifi sample
+  if (wifiRow) {
+    setCardSafe('cardSignal', wifiRow.rssi, ' dBm', signalQ(wifiRow.rssi));
+    setCardSafe('cardSNR', wifiRow.snr, ' dB', snrQ(wifiRow.snr));
+    setCardSafe('cardLatency', wifiRow.latency_ms != null ? Math.round(wifiRow.latency_ms * 10) / 10 : null, ' ms', latQ(wifiRow.latency_ms));
+    setCardSafe('cardLoss', wifiRow.packet_loss_pct != null ? wifiRow.packet_loss_pct : null, '%', lossQ(wifiRow.packet_loss_pct));
+  }
+  // Speed metrics from latest speed test
+  if (speedRow) {
+    setCardSafe('cardDownload', speedRow.download_mbps != null ? Math.round(speedRow.download_mbps * 10) / 10 : null, ' Mbps', dlQ(speedRow.download_mbps));
+    setCardSafe('cardUpload', speedRow.upload_mbps != null ? Math.round(speedRow.upload_mbps * 10) / 10 : null, ' Mbps', ulQ(speedRow.upload_mbps));
+    setCardSafe('cardJitter', speedRow.ping_jitter_ms != null ? Math.round(speedRow.ping_jitter_ms * 100) / 100 : null, ' ms', jitQ(speedRow.ping_jitter_ms));
+  }
+}
+
+function updateInfoBar(wifiRow, speedRow) {
+  // Connection info from wifi
+  if (wifiRow) {
+    document.getElementById('infoSSID').textContent = wifiRow.ssid || '—';
+    document.getElementById('infoBSSID').textContent = wifiRow.bssid || '—';
+    document.getElementById('infoChannel').textContent = wifiRow.channel != null ? wifiRow.channel : '—';
+    document.getElementById('infoWidth').textContent = wifiRow.channel_width != null ? wifiRow.channel_width + ' MHz' : '—';
+    document.getElementById('infoPHY').textContent = wifiRow.phy_mode || '—';
+    document.getElementById('infoTxRate').textContent = wifiRow.tx_rate != null ? Math.round(wifiRow.tx_rate) + ' Mbps' : '—';
+  }
+  // Server, VPN, ISP from speed
+  if (speedRow) {
+    const serverName = speedRow.server_name || '';
+    const serverLoc = speedRow.server_location || '';
+    document.getElementById('infoServer').textContent = serverName ? `${serverName} (${serverLoc})` : '—';
+    const vpnEl = document.getElementById('infoVPN');
+    if (speedRow.is_vpn === 1) {
+      vpnEl.textContent = 'Yes';
+      vpnEl.style.color = 'var(--fair)';
+    } else if (speedRow.is_vpn === 0) {
+      vpnEl.textContent = 'No';
+      vpnEl.style.color = '';
+    } else {
+      vpnEl.textContent = '—';
+      vpnEl.style.color = '';
+    }
+    document.getElementById('infoISP').textContent = speedRow.isp || '—';
+  }
+}
+
+// ── Charts ─────────────────────────────────────────────────────────
+const chartDefaults = {
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: { duration: 300 },
+  plugins: {
+    legend: { labels: { color: '#8b8fa3', font: { size: 11 } } },
+  },
+  scales: {
+    x: {
+      ticks: { color: '#8b8fa3', font: { size: 10 }, maxTicksLimit: 20, maxRotation: 0 },
+      grid: { color: 'rgba(42,45,58,0.6)' },
+    },
+    y: {
+      ticks: { color: '#8b8fa3', font: { size: 11 } },
+      grid: { color: 'rgba(42,45,58,0.6)' },
+    },
+  },
+};
+
+function timeLabel(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function onSpeedChartClick(evt, elements) {
+  if (!elements.length) return;
+  const idx = elements[0].index;
+  const row = allSpeed[idx];
+  if (row && row.result_url) window.open(row.result_url, '_blank');
+}
+
+// ── Speed tests modal ─────────────────────────────────────────────
+function showTestsModal() {
+  const tbody = document.getElementById('testsTableBody');
+  tbody.innerHTML = allSpeed.slice().reverse().map(r => {
+    const time = timeLabel(r.timestamp);
+    const dl = r.download_mbps != null ? r.download_mbps.toFixed(1) : '—';
+    const ul = r.upload_mbps != null ? r.upload_mbps.toFixed(1) : '—';
+    const ping = r.ping_latency_ms != null ? r.ping_latency_ms.toFixed(1) : '—';
+    const jitter = r.ping_jitter_ms != null ? r.ping_jitter_ms.toFixed(2) : '—';
+    const isp = r.isp || '—';
+    const server = r.server_name ? `${r.server_name}` : '—';
+    const link = r.result_url
+      ? `<a href="${r.result_url}" target="_blank" rel="noopener">View</a>`
+      : '—';
+    const color = getIspColor(r.isp);
+    return `<tr>
+      <td>${time}</td>
+      <td>${dl} Mbps</td>
+      <td>${ul} Mbps</td>
+      <td>${ping} ms</td>
+      <td>${jitter} ms</td>
+      <td><span class="isp-tag" style="--isp-color:${color}">${isp}</span></td>
+      <td>${server}</td>
+      <td>${link}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('testsModal').classList.add('open');
+}
+
+function hideTestsModal() {
+  document.getElementById('testsModal').classList.remove('open');
+}
+
+// ── Log viewer ────────────────────────────────────────────────────
+let logsRefreshTimer = null;
+
+function colorizeLog(line) {
+  const escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  if (/WARNING|warn/i.test(line)) return `<span class="log-warn">${escaped}</span>`;
+  if (/ERROR|error|failed/i.test(line)) return `<span class="log-err">${escaped}</span>`;
+  if (/speed:|Wake from sleep|Boost|Manual speed|Monitor started/i.test(line)) return `<span class="log-info">${escaped}</span>`;
+  return escaped;
+}
+
+async function loadLogs() {
+  try {
+    const data = await fetchJSON('/api/logs?lines=300');
+    const el = document.getElementById('logContent');
+    el.innerHTML = data.lines.map(colorizeLog).join('\n');
+    el.scrollTop = el.scrollHeight;
+  } catch (e) {
+    document.getElementById('logContent').textContent = 'Failed to load logs.';
+  }
+}
+
+function showLogsModal() {
+  document.getElementById('logsModal').classList.add('open');
+  loadLogs();
+  logsRefreshTimer = setInterval(loadLogs, 5000);
+}
+
+function hideLogsModal() {
+  document.getElementById('logsModal').classList.remove('open');
+  if (logsRefreshTimer) { clearInterval(logsRefreshTimer); logsRefreshTimer = null; }
+}
+
+// Close modals on overlay click or Escape
+document.getElementById('testsModal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) hideTestsModal();
+});
+document.getElementById('logsModal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) hideLogsModal();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { hideTestsModal(); hideLogsModal(); }
+});
+
+// Signal chart — uses wifi data
+const signalChart = new Chart(document.getElementById('chartSignal'), {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [
+      { label: 'RSSI', data: [], borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.1)', tension: 0.3, pointRadius: 0, fill: false, yAxisID: 'y' },
+      { label: 'Noise', data: [], borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.1)', tension: 0.3, pointRadius: 0, fill: false, yAxisID: 'y' },
+      { label: 'SNR', data: [], borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.08)', tension: 0.3, pointRadius: 0, fill: true, yAxisID: 'y1' },
+    ],
+  },
+  options: {
+    ...chartDefaults,
+    plugins: { ...chartDefaults.plugins },
+    scales: {
+      x: chartDefaults.scales.x,
+      y: {
+        ...chartDefaults.scales.y,
+        position: 'left',
+        title: { display: true, text: 'dBm', color: '#8b8fa3' },
+        min: -100, max: -20,
+      },
+      y1: {
+        ...chartDefaults.scales.y,
+        position: 'right',
+        title: { display: true, text: 'SNR (dB)', color: '#8b8fa3' },
+        min: 0, max: 60,
+        grid: { drawOnChartArea: false },
+      },
+    },
+  },
+});
+
+// Latency chart — uses wifi data
+const latencyChart = new Chart(document.getElementById('chartLatency'), {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [
+      { label: 'Latency (ms)', data: [], borderColor: '#eab308', backgroundColor: 'rgba(234,179,8,0.1)', tension: 0.3, pointRadius: 0, fill: true, yAxisID: 'y' },
+      { label: 'Packet Loss (%)', data: [], type: 'bar', backgroundColor: 'rgba(239,68,68,0.5)', yAxisID: 'y1' },
+    ],
+  },
+  options: {
+    ...chartDefaults,
+    plugins: { ...chartDefaults.plugins },
+    scales: {
+      x: chartDefaults.scales.x,
+      y: {
+        ...chartDefaults.scales.y,
+        position: 'left',
+        title: { display: true, text: 'ms', color: '#8b8fa3' },
+        min: 0,
+      },
+      y1: {
+        ...chartDefaults.scales.y,
+        position: 'right',
+        title: { display: true, text: 'Loss %', color: '#8b8fa3' },
+        min: 0, max: 100,
+        grid: { drawOnChartArea: false },
+      },
+    },
+  },
+});
+
+// Speed chart — uses speed data, colored by ISP
+let speedIspColors = []; // populated in updateCharts
+const speedChart = new Chart(document.getElementById('chartSpeed'), {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [
+      { label: 'Download', data: [], borderColor: '#4b5563', backgroundColor: 'transparent', tension: 0.3, pointRadius: 5, pointHoverRadius: 7, fill: false, spanGaps: true,
+        segment: { borderColor: ctx => speedIspColors[ctx.p0DataIndex] || '#4b5563' } },
+      { label: 'Upload', data: [], borderColor: '#4b5563', backgroundColor: 'transparent', tension: 0.3, pointRadius: 5, pointHoverRadius: 7, borderDash: [4, 4], fill: false, spanGaps: true,
+        segment: { borderColor: ctx => speedIspColors[ctx.p0DataIndex] || '#4b5563' } },
+    ],
+  },
+  options: {
+    ...chartDefaults,
+    onClick: onSpeedChartClick,
+    onHover: (evt, elements) => { evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
+    plugins: { ...chartDefaults.plugins },
+    scales: {
+      x: chartDefaults.scales.x,
+      y: {
+        ...chartDefaults.scales.y,
+        title: { display: true, text: 'Mbps', color: '#8b8fa3' },
+        min: 0,
+      },
+    },
+  },
+});
+
+// Jitter & Loaded Latency chart — uses speed data, colored by ISP
+const jitterChart = new Chart(document.getElementById('chartJitter'), {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [
+      { label: 'Ping Jitter', data: [], borderColor: '#4b5563', backgroundColor: 'transparent', tension: 0.3, pointRadius: 5, pointHoverRadius: 7, fill: false, spanGaps: true,
+        segment: { borderColor: ctx => speedIspColors[ctx.p0DataIndex] || '#4b5563' } },
+      { label: 'Download Latency', data: [], borderColor: '#4b5563', backgroundColor: 'transparent', tension: 0.3, pointRadius: 5, pointHoverRadius: 7, fill: false, spanGaps: true,
+        segment: { borderColor: ctx => speedIspColors[ctx.p0DataIndex] || '#4b5563' } },
+      { label: 'Upload Latency', data: [], borderColor: '#4b5563', backgroundColor: 'transparent', tension: 0.3, pointRadius: 5, pointHoverRadius: 7, borderDash: [4, 4], fill: false, spanGaps: true,
+        segment: { borderColor: ctx => speedIspColors[ctx.p0DataIndex] || '#4b5563' } },
+    ],
+  },
+  options: {
+    ...chartDefaults,
+    onClick: onSpeedChartClick,
+    onHover: (evt, elements) => { evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
+    plugins: { ...chartDefaults.plugins },
+    scales: {
+      x: chartDefaults.scales.x,
+      y: {
+        ...chartDefaults.scales.y,
+        title: { display: true, text: 'ms', color: '#8b8fa3' },
+        min: 0,
+      },
+    },
+  },
+});
+
+function updateCharts(wifiRows, speedRows) {
+  // Signal & Latency charts — wifi data
+  const wifiLabels = wifiRows.map(r => timeLabel(r.timestamp));
+
+  signalChart.data.labels = wifiLabels;
+  signalChart.data.datasets[0].data = wifiRows.map(r => r.rssi);
+  signalChart.data.datasets[1].data = wifiRows.map(r => r.noise);
+  signalChart.data.datasets[2].data = wifiRows.map(r => r.snr);
+  signalChart.update('none');
+
+  latencyChart.data.labels = wifiLabels;
+  latencyChart.data.datasets[0].data = wifiRows.map(r => r.latency_ms);
+  latencyChart.data.datasets[1].data = wifiRows.map(r => r.packet_loss_pct);
+  latencyChart.update('none');
+
+  // Speed & Jitter charts — lines and points colored by ISP
+  const speedLabels = speedRows.map(r => timeLabel(r.timestamp));
+  speedIspColors = speedRows.map(r => getIspColor(r.isp));
+
+  speedChart.data.labels = speedLabels;
+  speedChart.data.datasets.forEach(ds => {
+    ds.pointBackgroundColor = speedIspColors;
+    ds.pointBorderColor = speedIspColors;
+  });
+  speedChart.data.datasets[0].data = speedRows.map(r => r.download_mbps);
+  speedChart.data.datasets[1].data = speedRows.map(r => r.upload_mbps);
+  speedChart.update('none');
+
+  jitterChart.data.labels = speedLabels;
+  jitterChart.data.datasets.forEach(ds => {
+    ds.pointBackgroundColor = speedIspColors;
+    ds.pointBorderColor = speedIspColors;
+  });
+  jitterChart.data.datasets[0].data = speedRows.map(r => r.ping_jitter_ms);
+  jitterChart.data.datasets[1].data = speedRows.map(r => r.dl_latency_ms);
+  jitterChart.data.datasets[2].data = speedRows.map(r => r.ul_latency_ms);
+  jitterChart.update('none');
+
+  renderIspLegend();
+}
+
+// ── API calls ──────────────────────────────────────────────────────
+async function fetchJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+async function loadDays() {
+  try {
+    const data = await fetchJSON('/api/days');
+    daySelect.innerHTML = '';
+    if (data.days.length === 0) {
+      daySelect.innerHTML = '<option value="">No data yet</option>';
+      return;
+    }
+    data.days.reverse().forEach(d => {
+      const opt = document.createElement('option');
+      opt.value = d;
+      opt.textContent = d;
+      daySelect.appendChild(opt);
+    });
+    currentDay = data.days[0]; // most recent (reversed)
+  } catch (e) {
+    console.error('Failed to load days:', e);
+    daySelect.innerHTML = '<option value="">Error loading</option>';
+  }
+}
+
+async function loadDay(date) {
+  try {
+    const data = await fetchJSON(`/api/data?date=${date}`);
+    allWifi = data.wifi || [];
+    allSpeed = data.speed || [];
+    lastWifiTs = allWifi.length ? allWifi[allWifi.length - 1].timestamp : null;
+    lastSpeedTs = allSpeed.length ? allSpeed[allSpeed.length - 1].timestamp : null;
+    currentDay = date;
+    render();
+    updateStatus();
+  } catch (e) {
+    console.error('Failed to load day:', e);
+  }
+}
+
+async function loadIncremental() {
+  if (!currentDay) return;
+
+  // Check if day has changed (UTC)
+  const today = new Date().toISOString().slice(0, 10);
+  if (today !== currentDay && daySelect.value === currentDay) {
+    await loadDays();
+    if (daySelect.querySelector(`option[value="${today}"]`)) {
+      daySelect.value = today;
+      await loadDay(today);
+      return;
+    }
+  }
+
+  // Use the latest timestamp from either table as 'since'
+  const since = lastWifiTs && lastSpeedTs
+    ? (lastWifiTs > lastSpeedTs ? lastWifiTs : lastSpeedTs)
+    : (lastWifiTs || lastSpeedTs);
+  if (!since) return;
+
+  try {
+    const data = await fetchJSON(`/api/data?date=${currentDay}&since=${since}`);
+    const newWifi = data.wifi || [];
+    const newSpeed = data.speed || [];
+    if (newWifi.length > 0) {
+      allWifi.push(...newWifi);
+      lastWifiTs = allWifi[allWifi.length - 1].timestamp;
+    }
+    if (newSpeed.length > 0) {
+      allSpeed.push(...newSpeed);
+      lastSpeedTs = allSpeed[allSpeed.length - 1].timestamp;
+    }
+    if (newWifi.length > 0 || newSpeed.length > 0) {
+      render();
+    }
+    updateStatus();
+  } catch (e) {
+    console.error('Incremental load failed:', e);
+  }
+}
+
+function updateStatus() {
+  // Use the most recent timestamp from either table
+  const wTs = allWifi.length ? allWifi[allWifi.length - 1].timestamp : null;
+  const sTs = allSpeed.length ? allSpeed[allSpeed.length - 1].timestamp : null;
+  const latest = wTs && sTs ? (wTs > sTs ? wTs : sTs) : (wTs || sTs);
+  if (!latest) {
+    statusDot.className = 'status-dot offline';
+    statusDot.title = 'No data';
+    return;
+  }
+  const lastTs = new Date(latest);
+  const age = (Date.now() - lastTs.getTime()) / 1000;
+  if (age < 120) {
+    statusDot.className = 'status-dot live';
+    statusDot.title = 'Live';
+  } else if (age < 600) {
+    statusDot.className = 'status-dot stale';
+    statusDot.title = `Last sample ${Math.round(age / 60)}m ago`;
+  } else {
+    statusDot.className = 'status-dot offline';
+    statusDot.title = `Last sample ${Math.round(age / 60)}m ago`;
+  }
+}
+
+function render() {
+  const latestWifi = allWifi.length ? allWifi[allWifi.length - 1] : null;
+  const latestSpeed = allSpeed.length ? allSpeed[allSpeed.length - 1] : null;
+  updateCards(latestWifi, latestSpeed);
+  updateInfoBar(latestWifi, latestSpeed);
+  updateCharts(allWifi, allSpeed);
+}
+
+async function refreshAll() {
+  await loadDays();
+  const date = daySelect.value || currentDay;
+  if (date) await loadDay(date);
+}
+
+// ── Run speed test now ─────────────────────────────────────────────
+async function runSpeedNow() {
+  const btn = document.getElementById('runSpeedBtn');
+  btn.disabled = true;
+  btn.textContent = 'Running...';
+  try {
+    await fetch('/api/run-speed', { method: 'POST' });
+  } catch (e) {
+    console.error('Run speed test failed:', e);
+  }
+  // Re-enable after a short delay (test takes time, prevent double-click)
+  setTimeout(() => { btn.disabled = false; btn.textContent = 'Run Speed Test'; }, 5000);
+}
+
+// ── Boost mode ─────────────────────────────────────────────────────
+const boostSelect = document.getElementById('boostSelect');
+let boostUntil = null;
+let boostCountdown = null;
+
+const BOOST_OPTIONS = `
+  <option value="" disabled selected>Boost</option>
+  <option value="5min-30min">Every 5 min for 30 min</option>
+  <option value="5min-1h">Every 5 min for 1 hour</option>
+  <option value="2min-30min">Every 2 min for 30 min</option>`;
+
+function formatRemaining(until) {
+  const secs = Math.max(0, Math.round((until - Date.now()) / 1000));
+  if (secs <= 0) return null;
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return m > 0 ? `${m}m` : `${s}s`;
+}
+
+function renderBoostSelect() {
+  if (boostUntil && boostUntil > Date.now()) {
+    const remaining = formatRemaining(boostUntil);
+    const label = remaining ? `Boost (${remaining} left)` : 'Boost (active)';
+    boostSelect.innerHTML = `
+      <option value="" disabled selected>${label}</option>
+      <option value="off">Stop Boost</option>
+      <option value="5min-30min">Every 5 min for 30 min</option>
+      <option value="5min-1h">Every 5 min for 1 hour</option>
+      <option value="2min-30min">Every 2 min for 30 min</option>`;
+    boostSelect.classList.add('active');
+  } else {
+    boostSelect.innerHTML = BOOST_OPTIONS;
+    boostSelect.classList.remove('active');
+    boostUntil = null;
+    if (boostCountdown) { clearInterval(boostCountdown); boostCountdown = null; }
+  }
+}
+
+function startCountdown() {
+  if (boostCountdown) clearInterval(boostCountdown);
+  boostCountdown = setInterval(renderBoostSelect, 1000);
+}
+
+async function fetchBoostStatus() {
+  try {
+    const data = await fetchJSON('/api/boost');
+    if (data.active) {
+      boostUntil = new Date(data.until).getTime();
+      startCountdown();
+    } else {
+      boostUntil = null;
+    }
+    renderBoostSelect();
+  } catch (e) {
+    console.error('Failed to fetch boost status:', e);
+  }
+}
+
+async function activateBoost(preset) {
+  try {
+    const r = await fetch('/api/boost', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preset }),
+    });
+    const data = await r.json();
+    if (data.active) {
+      boostUntil = new Date(data.until).getTime();
+      startCountdown();
+    } else {
+      boostUntil = null;
+      if (boostCountdown) { clearInterval(boostCountdown); boostCountdown = null; }
+    }
+    renderBoostSelect();
+  } catch (e) {
+    console.error('Boost toggle failed:', e);
+  }
+}
+
+boostSelect.addEventListener('change', () => {
+  const v = boostSelect.value;
+  if (v) activateBoost(v);
+});
+
+// ── Init ───────────────────────────────────────────────────────────
+daySelect.addEventListener('change', () => {
+  const v = daySelect.value;
+  if (v) loadDay(v);
+});
+
+(async () => {
+  await loadDays();
+  if (currentDay) {
+    daySelect.value = currentDay;
+    await loadDay(currentDay);
+  }
+  await fetchBoostStatus();
+  // Auto-refresh every 60 seconds (data + boost status)
+  refreshTimer = setInterval(() => { loadIncremental(); fetchBoostStatus(); }, 60000);
+})();
+</script>
+</body>
+</html>
