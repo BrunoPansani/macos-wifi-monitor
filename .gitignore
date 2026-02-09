@@ -9,8 +9,9 @@ __pycache__/
 *.pyc
 *.pyo
 
-# Screenshots (local only)
+# Screenshots (local only, except docs/)
 *.png
+!docs/*.png
 
 # Tool/IDE directories
 .claude/

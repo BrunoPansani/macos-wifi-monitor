@@ -2,6 +2,10 @@
 
 A macOS WiFi quality monitor that continuously collects signal, latency, and throughput metrics, stores them in SQLite, and serves a live dashboard.
 
+![Dashboard Overview](docs/dashboard-overview.png)
+
+![Speed Tests Modal](docs/speed-tests-modal.png)
+
 ## What it tracks
 
 - **WiFi signal**: RSSI, noise floor, SNR, channel, PHY mode, Tx rate (via CoreWLAN)
